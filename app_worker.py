@@ -1,3 +1,4 @@
+# app_worker.py
 import os
 import time
 import traceback
@@ -6,6 +7,8 @@ from utils import supabase, upload_file
 from enf import extract_enf
 from audio_fp import extract_audio_fingerprint
 from phash import extract_video_phash
+
+TMP_PATH = "/tmp/forensics_video.mp4"
 
 def worker_loop():
     print("WORKER STARTED")
@@ -25,19 +28,24 @@ def worker_loop():
                 continue
 
             job = job_res.data[0]
+
             qid = job["id"]
             proof_id = job["proof_id"]
             user_id = job["user_id"]
-            video_path = job["video_path"]
+            video_bytes = job["video_data"]
+
+            # snimamo privremeni fajl
+            with open(TMP_PATH, "wb") as f:
+                f.write(video_bytes)
 
             supabase.table("forensic_queue").update({
                 "status": "processing"
             }).eq("id", qid).execute()
 
             try:
-                enf_hash, enf_png = extract_enf(video_path)
-                audio_fp = extract_audio_fingerprint(video_path)
-                video_phash = extract_video_phash(video_path)
+                enf_hash, enf_png = extract_enf(TMP_PATH)
+                audio_fp = extract_audio_fingerprint(TMP_PATH)
+                video_phash = extract_video_phash(TMP_PATH)
 
                 upload_file(f"{user_id}/{proof_id}_enf.png", enf_png, "image/png")
 
@@ -48,19 +56,15 @@ def worker_loop():
                     "video_phash": video_phash
                 }).execute()
 
-                try:
-                    os.remove(video_path)
-                except:
-                    pass
-
+                # obriši temp fajl i video iz baze
+                os.remove(TMP_PATH)
                 supabase.table("forensic_queue").update({
-                    "status": "completed"
+                    "status": "completed",
+                    "video_data": None
                 }).eq("id", qid).execute()
 
-                print(f"[WORKER] Completed {proof_id}")
-
             except Exception as e:
-                print("FORENSIC ERROR:", e)
+                print("PROCESS ERROR:", e)
                 traceback.print_exc()
                 supabase.table("forensic_queue").update({
                     "status": "failed"
