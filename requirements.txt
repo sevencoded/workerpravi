@@ -1,0 +1,14 @@
+flask
+supabase
+requests
+numpy
+scipy
+librosa
+soundfile
+opencv-python
+matplotlib
+ffmpeg-python
+python-dotenv
+imagehash
+pillow
+supervisor
